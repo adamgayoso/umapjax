@@ -20,13 +20,13 @@ This package is intended to be used in combination with accelerated hardware lik
 ```python
 import umapjax
 
-model = umapjax.UmapJax(n_neighbors=15, n_epochs=200)
+model = umapjax.UmapJax(n_neighbors=15)
 embedding = model.fit_transform(X)
 ```
 
 ## Implementation details
 
-The implementaion used in `umapjax` is very similar to the one used in [umap-learn](https://umap-learn.readthedocs.io/en/latest/); however, rather than a single step updating one single point, we update a set of points in parallel using jax. The size of the set of points is controlled by the `batch_size` parameter.
+The implementaion used in `umapjax` is very similar to the one used in [umap-learn](https://umap-learn.readthedocs.io/en/latest/); however, rather than a single step updating one single point, we update a set of points in parallel using jax. The gradients of the points are weighted by edge weights, which control sampling frequencies in the original algorithm. If results look strange, try changing `n_epochs` or `batch_size`. The `batch_size` argument can also be used to control acceleration on GPUs/TPUs.
 
 ## Installation
 

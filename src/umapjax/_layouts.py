@@ -90,6 +90,8 @@ def _epoch_update(
         Parameter of differentiable approximation of right adjoint functor
     number_to_update
         The number of samples to update.
+    move_other
+        Whether to move the tail samples in the 1-simplices.
     """
 
     def _attractive_grad_coeff(dist_squared):
