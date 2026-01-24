@@ -47,13 +47,14 @@ def rdist(x: Float[jnp.ndarray, " n_components"], y: Float[jnp.ndarray, " n_comp
 
 @partial(
     jax.jit,
-    static_argnames=("gamma", "negative_sample_rate", "a", "b", "number_to_update"),
-    donate_argnums=(0,),
+    static_argnames=("gamma", "negative_sample_rate", "a", "b", "number_to_update", "move_other"),
+    donate_argnums=(0, 1),
 )
 def _epoch_update(
-    head_embedding: Float[jnp.ndarray, "n_samples n_components"],
+    head_embedding: Float[jnp.ndarray, " n_samples n_components"],
     head_indices: Int[jnp.ndarray, " n_1_simplices"],
     tail_indices: Int[jnp.ndarray, " n_1_simplices"],
+    edge_weights: Float[jnp.ndarray, " n_1_simplices"],
     j_s: Int[jnp.ndarray, " number_to_update negative_sample_rate"],
     alpha: float,
     negative_sample_rate: int,
@@ -61,6 +62,7 @@ def _epoch_update(
     a: float,
     b: float,
     number_to_update: int,
+    move_other: bool,
 ) -> Float[jnp.ndarray, " n_samples n_components"]:
     """Update the attractive forces between vertices in the embedding.
 
@@ -72,6 +74,8 @@ def _epoch_update(
         The indices of the query samples.
     tail_indices
         The indices of the reference samples.
+    edge_weights
+        The weight of the 1-simplices.
     j_s
         Indices of negative samples.
     alpha
@@ -86,17 +90,19 @@ def _epoch_update(
         Parameter of differentiable approximation of right adjoint functor
     number_to_update
         The number of samples to update.
+    move_other
+        Whether to move the tail samples in the 1-simplices.
     """
 
     def _attractive_grad_coeff(dist_squared):
         grad_coeff = -2 * a * b * jnp.power(dist_squared, b - 1.0)
         grad_coeff /= a * jnp.power(dist_squared, b) + 1.0
-        return grad_coeff
+        return jnp.nan_to_num(grad_coeff, nan=0.0)
 
     def _repulsive_grad_coeff(dist_squared):
         grad_coeff = 2 * gamma * b
         grad_coeff /= (0.001 + dist_squared) * (a * jnp.power(dist_squared, b) + 1)
-        return grad_coeff
+        return jnp.nan_to_num(grad_coeff, nan=0.0)
 
     tail_embedding = head_embedding
     current = head_embedding[head_indices]
@@ -117,7 +123,11 @@ def _epoch_update(
     grad_rep = jnp.clip(grad_rep, -4.0, 4.0)
     grad_rep = jnp.sum(grad_rep, axis=1)
 
-    return alpha * (grad + grad_rep)
+    grad_head = grad + grad_rep
+    grad_tail = -grad if move_other else jnp.zeros_like(grad)
+    scale_grad = lambda g: alpha * g * edge_weights[:, None]
+
+    return scale_grad(grad_head), scale_grad(grad_tail)
 
 
 def optimize_layout_euclidean(
@@ -139,11 +149,10 @@ def optimize_layout_euclidean(
 ) -> Float[np.ndarray, " n_samples n_components"]:
     """Perform the optimization.
 
-    Improve an embedding using stochastic gradient descent to minimize the
+    Improve an embedding using gradient descent to minimize the
     fuzzy set cross entropy between the 1-skeletons of the high dimensional
-    and low dimensional fuzzy simplicial sets. In practice this is done by
-    sampling edges based on their membership strength (with the (1-p) terms
-    coming from negative sampling similar to word2vec).
+    and low dimensional fuzzy simplicial sets. This implementation uses
+    weighted gradients rather than stochastic sampling.
 
     Parameters
     ----------
@@ -200,50 +209,66 @@ def optimize_layout_euclidean(
     head_embedding = jnp.asarray(head_embedding)
     head = jnp.asarray(head)
     tail = jnp.asarray(tail)
-    batch_size = batch_size or min(8192, int(np.sum(weight)) // 2)
-    weight = jnp.asarray(weight)
+
+    # Normalize weights
+    weight = jnp.asarray(weight / np.max(weight), dtype=jnp.float32)
+    # Clip so that we have a total weight of 1 within n_epochs for the least weighted edge.
+    # This is not implemented in umap-learn
+    weight = jnp.clip(weight, 1 / n_epochs, 1.0)
+
+    batch_size = batch_size or min(8192, int(n_1_simplices))
     negative_sample_rate = int(negative_sample_rate)
+
+    # Pad arrays to be divisible by batch_size
+    n_batches = int(np.ceil(n_1_simplices / batch_size))
+    padding_len = n_batches * batch_size - n_1_simplices
 
     def _epoch(n, state):
         alpha = state.alpha
         key, subkey = jax.random.split(state.key)
-        samples_to_update = (
-            jax.random.uniform(subkey, shape=(n_1_simplices,), maxval=jnp.max(weight)) < weight
-        ).astype(jnp.bool)
 
-        # Shuffle the samples to update
-        key, subkey = jax.random.split(key)
-        indices = jax.random.permutation(subkey, jnp.arange(n_1_simplices))
-        samples_to_update = samples_to_update[indices]
+        # Shuffle indices
+        indices = jnp.arange(n_1_simplices)
+        if padding_len > 0:
+            indices = jnp.concatenate([indices, jnp.full((padding_len,), -1, dtype=jnp.int32)])
+        shuffled_indices = jax.random.permutation(key, indices)
+        batched_indices = shuffled_indices.reshape((n_batches, batch_size))
 
-        # Fill into array of shape (batch_size,) with indices
-        samples_to_update_reindexed = jnp.nonzero(samples_to_update, size=batch_size, fill_value=-1)[0]
-        samples_to_update = jnp.where(samples_to_update_reindexed != -1, indices[samples_to_update_reindexed], -1)
-        head_embedding = state.head_embedding
+        def _batch(carry, batch_indices):
+            curr_head_embedding, key = carry
 
-        key, subkey = jax.random.split(key)
+            key, subkey = jax.random.split(key)
+            j_s = jax.random.randint(
+                subkey,
+                (batch_size, negative_sample_rate),
+                0,
+                curr_head_embedding.shape[0],
+            )
 
-        j_s = jax.random.randint(
-            subkey,
-            (batch_size, negative_sample_rate),
-            0,
-            head_embedding.shape[0],
-        )
+            head_update, tail_update = _epoch_update(
+                curr_head_embedding,
+                head_indices=head[batch_indices],
+                tail_indices=tail[batch_indices],
+                edge_weights=weight[batch_indices],
+                j_s=j_s,
+                alpha=alpha,
+                gamma=gamma,
+                negative_sample_rate=negative_sample_rate,
+                a=a,
+                b=b,
+                number_to_update=batch_size,
+                move_other=True,
+            )
 
-        head_update = _epoch_update(
-            head_embedding,
-            head_indices=head[samples_to_update],
-            tail_indices=tail[samples_to_update],
-            j_s=j_s,
-            alpha=alpha,
-            gamma=gamma,
-            negative_sample_rate=int(negative_sample_rate),
-            a=a,
-            b=b,
-            number_to_update=batch_size,
-        )
-        head_update = jnp.where(samples_to_update[:, None] != -1, head_update, jnp.zeros_like(head_update))
-        head_embedding = head_embedding.at[head[samples_to_update]].add(head_update)
+            # Mask updates for padded samples (where indices are -1)
+            head_update = jnp.where(batch_indices[:, None] != -1, head_update, 0.0)
+            tail_update = jnp.where(batch_indices[:, None] != -1, tail_update, 0.0)
+            curr_head_embedding = curr_head_embedding.at[head[batch_indices]].add(head_update)
+            curr_head_embedding = curr_head_embedding.at[tail[batch_indices]].add(tail_update)
+
+            return (curr_head_embedding, key), None
+
+        (head_embedding, key), _ = jax.lax.scan(_batch, (state.head_embedding, key), batched_indices)
 
         return state.replace(
             alpha=initial_alpha * (1.0 - (n / n_epochs)),
