@@ -207,7 +207,9 @@ def optimize_layout_euclidean(
     def _epoch(n, state):
         alpha = state.alpha
         key, subkey = jax.random.split(state.key)
-        samples_to_update = (jax.random.uniform(subkey, shape=(n_1_simplices,)) < weight).astype(jnp.bool)
+        samples_to_update = (
+            jax.random.uniform(subkey, shape=(n_1_simplices,), maxval=jnp.max(weight)) < weight
+        ).astype(jnp.bool)
 
         # Shuffle the samples to update
         key, subkey = jax.random.split(key)
