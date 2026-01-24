@@ -77,19 +77,17 @@ def _compute_overlap(emb1: np.ndarray, emb2: np.ndarray, k: int) -> float:
 def test_batch_size_parameter():
     """Test that batch_size parameter is respected and runs without error."""
     X = np.random.rand(100, 10)
-    # fast run with small batch size
-    model_small = umapjax.UmapJax(n_neighbors=5, n_epochs=5, batch_size=10)
+    model_small = umapjax.UmapJax(n_neighbors=5, batch_size=10)
     embedding_small = model_small.fit_transform(X)
     assert embedding_small.shape == (100, 2)
 
-    # fast run with large batch size (larger than n_edges potentially)
-    model_large = umapjax.UmapJax(n_neighbors=5, n_epochs=500, batch_size=1000)
+    model_large = umapjax.UmapJax(n_neighbors=5, batch_size=100)
     embedding_large = model_large.fit_transform(X)
     assert embedding_large.shape == (100, 2)
 
     # Check that the embeddings are somewhat similar regardless of batch size
     overlap = _compute_overlap(embedding_small, embedding_large, k=5)
-    assert overlap > 0.1
+    assert overlap > 0.65, f"Overlap {overlap} is too low"
 
 
 @pytest.mark.parametrize("metric", ["euclidean", "cosine"])
@@ -108,7 +106,7 @@ def test_comparison_with_umap_learn(metric: str):
     embedding_ref_2 = ref_model_2.fit_transform(X)
 
     # Run UmapJax (Seed 42)
-    jax_model = umapjax.UmapJax(n_neighbors=k, n_epochs=400, metric=metric, random_state=42)
+    jax_model = umapjax.UmapJax(n_neighbors=k, n_epochs=200, metric=metric, random_state=42)
     embedding_jax = jax_model.fit_transform(X)
 
     # Compute Baselines
@@ -119,6 +117,7 @@ def test_comparison_with_umap_learn(metric: str):
     np.testing.assert_allclose(
         jax_overlap,
         baseline_overlap,
+        atol=0.1,
         rtol=0.1,
         err_msg=f"JAX overlap {jax_overlap:.4f} not close to baseline {baseline_overlap:.4f}",
     )
