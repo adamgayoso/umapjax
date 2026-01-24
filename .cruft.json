@@ -1,0 +1,23 @@
+{
+    "template": "https://github.com/scverse/cookiecutter-scverse",
+    "commit": "28d3bd0f8be379dbb0eeb81b3320a56f6036c3d3",
+    "checkout": null,
+    "context": {
+        "cookiecutter": {
+            "project_name": "umapjax",
+            "package_name": "umapjax",
+            "project_description": "UMAP, but optimized with jax.",
+            "author_full_name": "Adam Gayoso",
+            "author_email": "adamgayoso@berkeley.edu",
+            "github_user": "adamgayoso",
+            "project_repo": "https://github.com/adamgayoso/umapjax",
+            "license": "BSD 3-Clause License",
+            "_copy_without_render": [
+                ".github/workflows/**.yaml",
+                "docs/_templates/autosummary/**.rst"
+            ],
+            "_template": "https://github.com/scverse/cookiecutter-scverse"
+        }
+    },
+    "directory": null
+}
