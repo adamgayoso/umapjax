@@ -113,9 +113,9 @@ def _epoch_update(
     grad_rep = grad_coeff_rep[:, :, None] * (current[:, None, :] - tail_embedding_rep)
     # Removes any self-interaction gradients
     grad_rep = jnp.where(dist_squared_rep[:, :, None] == 0.0, 0.0, grad_rep)
-    grad_rep = jnp.where(grad_coeff_rep[:, :, None] > 0.0, grad_rep, 4.0 * jnp.ones_like(grad_rep))
-    grad_rep = jnp.sum(grad_rep, axis=1)
+    grad_rep = jnp.where(grad_coeff_rep[:, :, None] > 0.0, grad_rep, 0.0)
     grad_rep = jnp.clip(grad_rep, -4.0, 4.0)
+    grad_rep = jnp.sum(grad_rep, axis=1)
 
     return alpha * (grad + grad_rep)
 
