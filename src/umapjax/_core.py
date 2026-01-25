@@ -47,6 +47,7 @@ def simplicial_set_embedding(
     verbose: bool = False,
     tqdm_kwds: dict | None = None,
     batch_size: int | None = None,
+    spectral_jax: bool = True,
 ) -> tuple[Float[np.ndarray, " n_samples n_components"], dict]:
     """Perform a fuzzy simplicial set embedding.
 
@@ -117,6 +118,9 @@ def simplicial_set_embedding(
     batch_size
         The batch size to use for the optimization loop.
 
+    spectral_jax
+        Use the JAX implementation of spectral layout.
+
     Returns
     -------
     embedding
@@ -148,9 +152,9 @@ def simplicial_set_embedding(
 
     if isinstance(init, str) and init == "random":
         embedding = random_state.uniform(low=-10.0, high=10.0, size=(graph.shape[0], n_components)).astype(np.float32)
-    elif isinstance(init, str) and (init == "spectral" or init == "spectral_jax"):
+    elif isinstance(init, str) and init == "spectral":
         # We add a little noise to avoid local minima for optimization to come
-        spectral_fn = spectral_layout_jax if init == "spectral_jax" else spectral_layout
+        spectral_fn = spectral_layout_jax if spectral_jax else spectral_layout
         initialisation = spectral_fn(
             data,
             graph,
@@ -549,8 +553,6 @@ class UmapJax(UMAP):
 
     def _fit_embed_data(self, X: ArrayLike, n_epochs: int, init: str, random_state: RandomState):
         """A method wrapper for simplicial_set_embedding that can be replaced by subclasses."""
-        if init == "spectral" and self.spectral_jax:
-            init = "spectral_jax"
         return simplicial_set_embedding(
             data=X,
             graph=self.graph_,
@@ -562,6 +564,7 @@ class UmapJax(UMAP):
             negative_sample_rate=self.negative_sample_rate,
             n_epochs=n_epochs,
             init=init,
+            spectral_jax=self.spectral_jax,
             random_state=random_state,
             metric=self._input_distance_func,
             metric_kwds=self._metric_kwds,
