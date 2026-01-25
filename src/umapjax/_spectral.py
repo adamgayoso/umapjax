@@ -21,7 +21,7 @@ from sklearn.metrics import pairwise_distances
 
 RandomState = int | np.random.Generator | np.random.RandomState | None
 
-SPECTRAL_DENSE_THRESHOLD = 30_000
+SPECTRAL_DENSE_THRESHOLD = 30_000  # ~3.6GB of RAM in float32
 
 
 def multi_component_layout(
@@ -251,7 +251,7 @@ def _spectral_layout(
     )
     X = gen.normal(size=(L.shape[0], k)).astype(dtype)
 
-    if graph.shape[0] < SPECTRAL_DENSE_THRESHOLD:  # ~3.6GB of RAM in float32
+    if graph.shape[0] < SPECTRAL_DENSE_THRESHOLD:
         L_dense = L.toarray() if scipy.sparse.issparse(L) else L
         eigenvalues, eigenvectors = jnp.linalg.eigh(jnp.asarray(L_dense))
         order = np.argsort(np.array(eigenvalues))[1:k]
@@ -262,7 +262,7 @@ def _spectral_layout(
         lambda v: -1 * L_sparse @ v,  # -1 trick to get smallest eigenvalues
         jnp.asarray(X),
         tol=tol or 1e-4,
-        m=maxiter or 100,
+        m=maxiter or 5 * graph.shape[0],
     )
     eigenvalues *= -1
     order = np.argsort(np.array(jax.device_get(eigenvalues)))[1:k]
