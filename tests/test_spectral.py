@@ -54,11 +54,9 @@ def test_spectral_consistency(graph_type):
             shape=(n_samples, n_samples),
         )
 
-    # Random data
     rng = np.random.default_rng(random_state)
     X = rng.random((n_samples, 10))
 
-    # UMAP-learn spectral
     emb_ref = umap.spectral.spectral_layout(
         data=X,
         graph=graph,
@@ -66,7 +64,6 @@ def test_spectral_consistency(graph_type):
         random_state=random_state,
     )
 
-    # UMAP-jax spectral
     emb_jax = spectral_layout(
         data=X,
         graph=graph,
@@ -74,21 +71,19 @@ def test_spectral_consistency(graph_type):
         random_state=random_state,
     )
 
-    # Compare values
     # For multi-component, sign flips can happen per-component, so we must check per component.
     if graph_type == "connected":
         components = [np.arange(n_samples)]
     else:
-        # Known structure from graph generation
         components = [np.arange(49), np.arange(50, 100)]
 
     for indices in components:
         comp_jax, comp_ref = emb_jax[indices], emb_ref[indices]
 
-        # 1. Check centroids (meta-embedding consistency)
+        # Check centroids (meta-embedding consistency)
         chex.assert_trees_all_close(comp_jax.mean(0), comp_ref.mean(0), atol=2e-2)
 
-        # 2. Check centered component (spectral embedding consistency)
+        # Check centered component (spectral embedding consistency)
         c_jax, c_ref = comp_jax - comp_jax.mean(0), comp_ref - comp_ref.mean(0)
         chex.assert_shape(c_jax, c_ref.shape)
 
@@ -104,8 +99,6 @@ def test_spectral_consistency(graph_type):
 @pytest.mark.parametrize("enable_x64", [True, False])
 def test_spectral_layout_lobpcg(monkeypatch, enable_x64):
     """Test spectral layout using the LOBPCG path (forced by low threshold)."""
-    # Use a cycle graph which is extremely stable and well-behaved
-    # Enable/disable x64 for tests
     jax.config.update("jax_enable_x64", enable_x64)
 
     rng = np.random.default_rng(42)
@@ -113,11 +106,9 @@ def test_spectral_layout_lobpcg(monkeypatch, enable_x64):
     row = np.arange(n_samples)
     col = (np.arange(n_samples) + 1) % n_samples
     data = rng.uniform(size=(n_samples,))
-    # Undirected cycle
     graph = scipy.sparse.coo_matrix((data, (row, col)), shape=(n_samples, n_samples))
     graph = graph + graph.T
 
-    # Ensure float32 X
     X = rng.random((n_samples, 10)).astype(np.float32)
     dim = 2
 
