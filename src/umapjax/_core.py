@@ -20,6 +20,7 @@ from umap import UMAP
 from umap.spectral import spectral_layout
 
 from ._layouts import optimize_layout_euclidean
+from ._spectral import spectral_layout as spectral_layout_jax
 
 INT32_MIN = np.iinfo(np.int32).min + 1
 INT32_MAX = np.iinfo(np.int32).max - 1
@@ -147,9 +148,10 @@ def simplicial_set_embedding(
 
     if isinstance(init, str) and init == "random":
         embedding = random_state.uniform(low=-10.0, high=10.0, size=(graph.shape[0], n_components)).astype(np.float32)
-    elif isinstance(init, str) and init == "spectral":
+    elif isinstance(init, str) and (init == "spectral" or init == "spectral_jax"):
         # We add a little noise to avoid local minima for optimization to come
-        initialisation = spectral_layout(
+        spectral_fn = spectral_layout_jax if init == "spectral_jax" else spectral_layout
+        initialisation = spectral_fn(
             data,
             graph,
             n_components,
@@ -275,6 +277,9 @@ class UmapJax(UMAP):
             * 'spectral': use a spectral embedding of the fuzzy 1-skeleton
             * 'random': assign initial embedding positions at random.
             * A numpy array of initial embedding positions.
+
+    spectral_jax
+        Whether to use the jax implementation of the spectral embedding.
 
     min_dist
         The effective minimum distance between embedded points. Smaller values
@@ -457,6 +462,7 @@ class UmapJax(UMAP):
         n_epochs: int | None = None,
         learning_rate: float = 1.0,
         init: Literal["spectral", "random"] | Float[np.ndarray, " n_samples n_components"] = "spectral",
+        spectral_jax: bool = True,
         min_dist: float = 0.1,
         spread: float = 1.0,
         low_memory: bool = True,
@@ -500,6 +506,7 @@ class UmapJax(UMAP):
         self.n_components = n_components
         self.repulsion_strength = repulsion_strength
         self.learning_rate = learning_rate
+        self.spectral_jax = spectral_jax
 
         self.spread = spread
         self.min_dist = min_dist
@@ -542,6 +549,8 @@ class UmapJax(UMAP):
 
     def _fit_embed_data(self, X: ArrayLike, n_epochs: int, init: str, random_state: RandomState):
         """A method wrapper for simplicial_set_embedding that can be replaced by subclasses."""
+        if init == "spectral" and self.spectral_jax:
+            init = "spectral_jax"
         return simplicial_set_embedding(
             data=X,
             graph=self.graph_,
