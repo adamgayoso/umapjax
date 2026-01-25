@@ -25,57 +25,52 @@ SPECTRAL_DENSE_THRESHOLD = 30_000
 
 
 def multi_component_layout(
-    data,
-    graph,
-    n_components,
-    component_labels,
-    dim,
-    random_state,
-    metric="euclidean",
-    metric_kwds=None,
-    tol=0.0,
-    maxiter=0,
-):
-    """Jax-patched multi-component layout algorithm.
+    data: Float[np.ndarray, " n_samples n_features"] | scipy.sparse.spmatrix,
+    graph: scipy.sparse.spmatrix,
+    n_components: int,
+    component_labels: np.ndarray,
+    dim: int,
+    random_state: RandomState,
+    metric: str = "euclidean",
+    metric_kwds: dict | None = None,
+    tol: float = 0.0,
+    maxiter: int = 0,
+) -> Float[np.ndarray, " n_samples dim"]:
+    """Specialised layout algorithm for dealing with graphs with many connected components.
+
+    This will first find relative positions for the components by spectrally embedding
+    their centroids, then spectrally embed each individual connected component positioning
+    them according to the centroid embeddings.
 
     Parameters
     ----------
-    data: array of shape (n_samples, n_features)
+    data
         The source data -- required so we can generate centroids for each
         connected component of the graph.
-
-    graph: sparse matrix
+    graph
         The adjacency matrix of the graph to be embedded.
-
-    n_components: int
+    n_components
         The number of distinct components to be layed out.
-
-    component_labels: array of shape (n_samples)
+    component_labels
         For each vertex in the graph the label of the component to
         which the vertex belongs.
-
-    dim: int
+    dim
         The chosen embedding dimension.
-
-    metric: string or callable (optional, default 'euclidean')
+    random_state
+        A state capable being used as a numpy random state.
+    metric
         The metric used to measure distances among the source data points.
-
-    metric_kwds: dict (optional, default {})
+    metric_kwds
         Keyword arguments to be passed to the metric function.
-
-    tol: float, default chosen by implementation
+    tol
         Stopping tolerance for the numerical algorithm computing the embedding.
-
-    tol: float, default chosen by implementation
-        Stopping tolerance for the numerical algorithm computing the embedding.
-
-    maxiter: int, default chosen by implementation
+    maxiter
         Number of iterations the numerical algorithm will go through at most as it
         attempts to compute the embedding.
 
     Returns
     -------
-    embedding: array of shape (n_samples, dim)
+    embedding
         The initial embedding of ``graph``.
     """
     if metric_kwds is None:
@@ -199,38 +194,20 @@ def _spectral_layout(
     ----------
     data
         The source data
-
     graph
         The (weighted) adjacency matrix of the graph as a sparse matrix.
-
     dim
         The dimension of the space into which to embed.
-
     random_state
         A state capable being used as a numpy random state.
-
     metric
         The metric used to measure distances among the source data points.
         Used only if the multiple connected components are found in the
         graph.
-
     metric_kwds
         Keyword arguments to be passed to the metric function.
-        If metric is 'precomputed', 'linkage' keyword can be used to specify
-        'average', 'complete', or 'single' linkage. Default is 'average'.
-        Used only if the multiple connected components are found in the
-        graph.
-
-    init
-        Indicates to initialize the eigensolver. Use "random" (the default) to
-        use uniformly distributed random initialization; use "tsvd" to warm-start the
-        eigensolver with singular vectors of the Laplacian associated to the largest
-        singular values. This latter option also forces usage of the LOBPCG eigensolver;
-        with the former, ARPACK's solver ``eigsh`` will be used for smaller Laplacians.
-
     tol
         Stopping tolerance for the numerical algorithm computing the embedding.
-
     maxiter
         Number of iterations the numerical algorithm will go through at most as it
         attempts to compute the embedding.
