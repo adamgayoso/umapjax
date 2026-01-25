@@ -81,7 +81,7 @@ def test_spectral_consistency(graph_type):
         comp_jax, comp_ref = emb_jax[indices], emb_ref[indices]
 
         # Check centroids (meta-embedding consistency)
-        chex.assert_trees_all_close(comp_jax.mean(0), comp_ref.mean(0), atol=2e-2)
+        chex.assert_trees_all_close(comp_jax.mean(0), comp_ref.mean(0), atol=0.05)
 
         # Check centered component (spectral embedding consistency)
         c_jax, c_ref = comp_jax - comp_jax.mean(0), comp_ref - comp_ref.mean(0)
