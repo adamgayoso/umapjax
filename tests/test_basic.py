@@ -1,3 +1,4 @@
+import chex
 import numpy as np
 import pytest
 import umap
@@ -52,9 +53,8 @@ def test_fit_transform_shape_and_type():
     model = umapjax.UmapJax(n_neighbors=5, n_epochs=50)
     embedding = model.fit_transform(X)
 
-    assert isinstance(embedding, np.ndarray)
-    assert embedding.shape == (100, 2)
-    assert embedding.dtype == np.float32
+    chex.assert_type(embedding, np.float32)
+    chex.assert_shape(embedding, (100, 2))
 
 
 def _compute_overlap(emb1: np.ndarray, emb2: np.ndarray, k: int) -> float:
@@ -114,10 +114,9 @@ def test_comparison_with_umap_learn(metric: str):
     jax_overlap = _compute_overlap(embedding_ref_1, embedding_jax, k)
 
     # Assert JAX overlap is reasonably close to baseline (allow 40% slack)
-    np.testing.assert_allclose(
+    chex.assert_trees_all_close(
         jax_overlap,
         baseline_overlap,
         atol=0.1,
         rtol=0.1,
-        err_msg=f"JAX overlap {jax_overlap:.4f} not close to baseline {baseline_overlap:.4f}",
     )
