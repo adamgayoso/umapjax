@@ -90,8 +90,9 @@ def test_batch_size_parameter():
     assert overlap > 0.65, f"Overlap {overlap} is too low"
 
 
+@pytest.mark.parametrize("backend", ["jax", "mx"])
 @pytest.mark.parametrize("metric", ["euclidean", "cosine"])
-def test_comparison_with_umap_learn(metric: str):
+def test_comparison_with_umap_learn(metric: str, backend: str):
     """Compare UmapJax with umap-learn by checking nearest neighbor overlap."""
     # Generate synthetic data with structure
     X, _ = make_blobs(n_samples=500, n_features=20, centers=5, random_state=42)
@@ -106,7 +107,7 @@ def test_comparison_with_umap_learn(metric: str):
     embedding_ref_2 = ref_model_2.fit_transform(X)
 
     # Run UmapJax (Seed 42)
-    jax_model = umapjax.UmapJax(n_neighbors=k, n_epochs=200, metric=metric, random_state=42)
+    jax_model = umapjax.UmapJax(n_neighbors=k, n_epochs=200, metric=metric, random_state=42, backend=backend)
     embedding_jax = jax_model.fit_transform(X)
 
     # Compute Baselines

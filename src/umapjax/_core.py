@@ -19,7 +19,8 @@ from sklearn.neighbors import KDTree
 from umap import UMAP
 from umap.spectral import spectral_layout
 
-from ._layouts import optimize_layout_euclidean
+from ._layouts import optimize_layout_euclidean as layout_jax
+from ._layouts_mlx import optimize_layout_euclidean as layout_mlx
 from ._spectral import spectral_layout as spectral_layout_jax
 
 INT32_MIN = np.iinfo(np.int32).min + 1
@@ -48,6 +49,7 @@ def simplicial_set_embedding(
     tqdm_kwds: dict | None = None,
     batch_size: int | None = None,
     spectral_jax: bool = True,
+    backend: Literal["jax", "mx"] = "jax",
 ) -> tuple[Float[np.ndarray, " n_samples n_components"], dict]:
     """Perform a fuzzy simplicial set embedding.
 
@@ -121,6 +123,9 @@ def simplicial_set_embedding(
     spectral_jax
         Use the JAX implementation of spectral layout.
 
+    backend
+        The backend to use for the optimization loop.
+
     Returns
     -------
     embedding
@@ -142,6 +147,13 @@ def simplicial_set_embedding(
 
     if n_epochs is None:
         n_epochs = default_epochs
+
+    # Rescale n epochs due to optimization differences
+    # UmapJax goes through each edge once per epoch, while umap-learn goes through
+    # the expected number of edges per epoch
+    expected_epoch_length = graph.data / np.max(graph.data)
+    expected_epoch_length = np.sum(expected_epoch_length)
+    n_epochs = n_epochs * int(expected_epoch_length) // graph.data.shape[0]
 
     if n_epochs > 10:
         graph.data[graph.data < (graph.data.max() / float(n_epochs))] = 0.0
@@ -190,7 +202,9 @@ def simplicial_set_embedding(
         np.float32, order="C"
     )
 
-    embedding = optimize_layout_euclidean(
+    optimize_layout_fn = layout_jax if backend == "jax" else layout_mlx
+
+    embedding = optimize_layout_fn(
         head_embedding=embedding,
         tail_embedding=embedding,
         head=head,
@@ -453,6 +467,9 @@ class UmapJax(UMAP):
     batch_size
         The batch size to use for the optimization loop. If None, the batch size
         is set to the minimum of 8192 and the expected length of an epoch under standard UMAP sampling.
+
+    backend
+        The backend to use for the optimization loop. Options are 'jax' or 'mx'.
     """
 
     def __init__(
@@ -498,6 +515,7 @@ class UmapJax(UMAP):
         disconnection_distance: float | None = None,
         precomputed_knn: tuple[ArrayLike | None, ArrayLike | None, ArrayLike | None] = (None, None, None),
         batch_size: int | None = None,
+        backend: Literal["jax", "mx"] = "jax",
     ):
         self.n_neighbors = n_neighbors
         self.metric = metric
@@ -542,6 +560,7 @@ class UmapJax(UMAP):
         self.batch_size = batch_size
 
         self.n_jobs = n_jobs
+        self.backend = backend
 
         self.a = a
         self.b = b
@@ -571,6 +590,7 @@ class UmapJax(UMAP):
             verbose=self.verbose,
             tqdm_kwds=self.tqdm_kwds,
             batch_size=self.batch_size,
+            backend=self.backend,
         )
 
     def transform(self, X: ArrayLike):
