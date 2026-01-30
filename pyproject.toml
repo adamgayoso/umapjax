@@ -24,16 +24,17 @@ urls.Homepage = "https://github.com/adamgayoso/umapjax"
 urls.Source = "https://github.com/adamgayoso/umapjax"
 
 [dependency-groups]
-dev = [ "pre-commit", "twine>=4.0.2" ]
+dev = [
+  "pre-commit",
+  "twine>=4.0.2",
+  { include-group = "jax" },
+  { include-group = "mlx" },
+  { include-group = "torch" },
+]
 test = [
   "coverage>=7.10",
-  "jax",
-  "jaxlib",
-  "mlx",
   "pytest",
   "pytest-cov",     # For VS Code’s coverage functionality
-  "torch>=2",
-  "torchvision",
 ]
 jax = [ "jax", "jaxlib" ]
 mlx = [ "mlx" ]
