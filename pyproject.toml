@@ -4,7 +4,7 @@ requires = [ "hatchling" ]
 
 [project]
 name = "umapjax"
-version = "0.0.3"
+version = "0.1.0"
 description = "UMAP, but optimized with jax."
 readme = "README.md"
 license = { file = "LICENSE" }
