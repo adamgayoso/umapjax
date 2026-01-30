@@ -18,15 +18,7 @@ classifiers = [
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
 ]
-dependencies = [
-  "chex",
-  "jax",
-  "jaxlib",
-  "jaxtyping",
-  "mlx",
-  "torch>=2.10",
-  "umap-learn",
-]
+dependencies = [ "chex", "jaxtyping", "umap-learn" ]
 # https://docs.pypi.org/project_metadata/#project-urls
 urls.Homepage = "https://github.com/adamgayoso/umapjax"
 urls.Source = "https://github.com/adamgayoso/umapjax"
@@ -35,11 +27,16 @@ urls.Source = "https://github.com/adamgayoso/umapjax"
 dev = [ "pre-commit", "twine>=4.0.2" ]
 test = [
   "coverage>=7.10",
+  "jax",
+  "jaxlib",
+  "mlx",
   "pytest",
   "pytest-cov",     # For VS Code’s coverage functionality
+  "torch>=2.10",
 ]
+jax = [ "jax", "jaxlib" ]
 mlx = [ "mlx" ]
-torch = [ "torch" ]
+torch = [ "torch>=2.10" ]
 
 [tool.hatch.build.targets.wheel]
 

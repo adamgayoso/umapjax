@@ -49,21 +49,17 @@ If you don't have Python installed, we recommend installing [uv][].
 
 There are several alternative options to install umapjax:
 
-1. Install the latest release of `umapjax` from [PyPI][]:
+1. Install the latest release of `umapjax` from [PyPI][] with a preferred backend:
 
 ```bash
-pip install umapjax
+pip install "umapjax[jax,mlx,torch]"
 ```
 
 2. Install the latest development version:
 
 ```bash
-pip install git+https://github.com/adamgayoso/umapjax.git@main
+pip install "umapjax[jax,mlx,torch] @ git+https://github.com/adamgayoso/umapjax.git@main"
 ```
-
-## Release notes
-
-See the [changelog][].
 
 ## Contact
 
