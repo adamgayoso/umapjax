@@ -37,7 +37,7 @@ test = [
 ]
 jax = [ "jax", "jaxlib" ]
 mlx = [ "mlx" ]
-torch = [ "torch>=2", "torchvision" ]
+torch = [ "setuptools", "torch>=2", "torchvision" ]
 
 [tool.hatch.build.targets.wheel]
 
