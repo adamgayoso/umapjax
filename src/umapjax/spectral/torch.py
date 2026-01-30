@@ -1,5 +1,5 @@
 """
-Spectral embedding of the graph using jax.
+Spectral embedding of the graph using PyTorch.
 
 This code was adapted from umap-learn.
 Copyright (c) 2017, Leland McInnes
@@ -9,19 +9,17 @@ https://github.com/lmcinnes/umap/blob/master/LICENSE.txt
 
 from __future__ import annotations
 
-import jax
-import jax.numpy as jnp
 import numpy as np
 import scipy.sparse
 import scipy.sparse.csgraph
+import torch
 import umap
-from jax.experimental.sparse import bcoo, linalg
 from jaxtyping import Float
 from sklearn.metrics import pairwise_distances
 
 RandomState = int | np.random.Generator | np.random.RandomState | None
 
-SPECTRAL_DENSE_THRESHOLD = 30_000  # ~3.6GB of RAM in float32
+SPECTRAL_DENSE_THRESHOLD = 10_000  # ~1.2GB of RAM in float32
 
 
 def multi_component_layout(
@@ -136,7 +134,7 @@ def spectral_layout(
     tol: float = 0.0,
     maxiter: int = 0,
 ) -> Float[np.ndarray, " n_samples dim"]:
-    """Compute spectral layout with jax.
+    """Compute spectral layout with PyTorch.
 
     Parameters
     ----------
@@ -179,7 +177,7 @@ def spectral_layout(
 
 
 def _spectral_layout(
-    data: Float[np.ndarray, " n_samples n_features"] | scipy.sparse.spmatrix,
+    data: Float[np.ndarray, " n_samples n_features"] | scipy.sparse.spmatrix | None,
     graph: scipy.sparse.spmatrix,
     dim: int,
     random_state: RandomState,
@@ -188,7 +186,7 @@ def _spectral_layout(
     tol: float = 0.0,
     maxiter: int = 0,
 ) -> Float[np.ndarray, " n_samples dim"]:
-    """Spectral embedding of the graph using jax.
+    """Spectral embedding of the graph using PyTorch.
 
     Parameters
     ----------
@@ -234,8 +232,7 @@ def _spectral_layout(
         )
 
     sqrt_deg = np.sqrt(np.asarray(graph.sum(axis=0)).squeeze())
-    # Determine dtype based on configuration (float32 or float64)
-    dtype = np.float64 if jax.config.jax_enable_x64 else np.float32
+    dtype = np.float32
 
     I = scipy.sparse.identity(graph.shape[0], dtype=dtype)
     D = scipy.sparse.spdiags(1.0 / sqrt_deg, 0, graph.shape[0], graph.shape[0])
@@ -251,19 +248,30 @@ def _spectral_layout(
     )
     X = gen.normal(size=(L.shape[0], k)).astype(dtype)
 
+    # Use CUDA if available
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     if graph.shape[0] < SPECTRAL_DENSE_THRESHOLD:
         L_dense = L.toarray() if scipy.sparse.issparse(L) else L
-        eigenvalues, eigenvectors = jnp.linalg.eigh(jnp.asarray(L_dense))
-        order = np.argsort(np.array(eigenvalues))[1:k]
-        return np.array(jax.device_get(eigenvectors))[:, order]
+        L_torch = torch.from_numpy(L_dense).to(device)
+        eigenvalues, eigenvectors = torch.linalg.eigh(L_torch)
+        order = torch.argsort(eigenvalues)[1:k]
+        return eigenvectors[:, order].cpu().numpy()
 
-    L_sparse = bcoo.BCOO.from_scipy_sparse(L)
-    eigenvalues, eigenvectors, _ = linalg.lobpcg_standard(
-        lambda v: -1 * L_sparse @ v,  # -1 trick to get smallest eigenvalues
-        jnp.asarray(X),
+    # For large sparse matrices, use LOBPCG
+    L_coo = L.tocoo() if scipy.sparse.issparse(L) else scipy.sparse.coo_matrix(L)
+    indices = torch.tensor(np.vstack([L_coo.row, L_coo.col]), dtype=torch.long, device=device)
+    values = torch.tensor(L_coo.data, dtype=torch.float32, device=device)
+    L_sparse = torch.sparse_coo_tensor(indices, values, L_coo.shape, device=device).coalesce()
+
+    X_torch = torch.from_numpy(X).to(device)
+    eigenvalues, eigenvectors = torch.lobpcg(
+        L_sparse,
+        k=k,
+        X=X_torch,
+        largest=False,
         tol=tol or 1e-4,
-        m=maxiter or 5 * graph.shape[0],
+        niter=maxiter or 5 * graph.shape[0],
     )
-    eigenvalues *= -1
-    order = np.argsort(np.array(jax.device_get(eigenvalues)))[1:k]
-    return np.array(jax.device_get(eigenvectors))[:, order]
+    order = torch.argsort(eigenvalues)[1:k]
+    return eigenvectors[:, order].cpu().numpy()

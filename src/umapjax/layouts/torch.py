@@ -1,5 +1,5 @@
 """
-Umap implementation using MLX, optimization algorithms.
+Umap implementation using PyTorch, optimization algorithms.
 
 This code was adapted from umap-learn.
 Copyright (c) 2017, Leland McInnes
@@ -12,52 +12,48 @@ from __future__ import annotations
 import functools
 from dataclasses import dataclass
 
-import mlx.core as mx
 import numpy as np
+import torch
+from jaxtyping import Float, Int
 
 
 @dataclass
 class OptimizationState:
     """State for the UMAP optimization loop."""
 
-    head_embedding: mx.array
-    key: mx.array
+    head_embedding: Float[torch.Tensor, " n_samples n_components"]
+    generator: torch.Generator
     alpha: float
 
 
-def _attractive_grad_coeff(dist_squared: mx.array, a: float, b: float) -> mx.array:
+def _attractive_grad_coeff(dist_squared: torch.Tensor, a: float, b: float) -> torch.Tensor:
     """Compute the attractive gradient coefficient."""
-    a_mx = mx.array(a)
-    b_mx = mx.array(b)
-    grad_coeff = -2 * a_mx * b_mx * mx.power(dist_squared, b_mx - 1.0)
-    grad_coeff = grad_coeff / (a_mx * mx.power(dist_squared, b_mx) + 1.0)
-    return mx.where(mx.isfinite(grad_coeff), grad_coeff, 0.0)
+    grad_coeff = -2 * a * b * torch.pow(dist_squared, b - 1.0)
+    grad_coeff = grad_coeff / (a * torch.pow(dist_squared, b) + 1.0)
+    return torch.nan_to_num(grad_coeff, nan=0.0)
 
 
-def _repulsive_grad_coeff(dist_squared: mx.array, gamma: float, a: float, b: float) -> mx.array:
+def _repulsive_grad_coeff(dist_squared: torch.Tensor, gamma: float, a: float, b: float) -> torch.Tensor:
     """Compute the repulsive gradient coefficient."""
-    gamma_mx = mx.array(gamma)
-    a_mx = mx.array(a)
-    b_mx = mx.array(b)
-    grad_coeff = 2 * gamma_mx * b_mx
-    grad_coeff = grad_coeff / ((0.001 + dist_squared) * (a_mx * mx.power(dist_squared, b_mx) + 1))
-    return mx.where(mx.isfinite(grad_coeff), grad_coeff, 0.0)
+    grad_coeff = 2 * gamma * b
+    grad_coeff = grad_coeff / ((0.001 + dist_squared) * (a * torch.pow(dist_squared, b) + 1))
+    return torch.nan_to_num(grad_coeff, nan=0.0)
 
 
 def _epoch_update(
-    head_embedding: mx.array,
-    head_indices: mx.array,
-    tail_indices: mx.array,
-    edge_weights: mx.array,
-    j_s: mx.array,
-    alpha: mx.array,
+    head_embedding: Float[torch.Tensor, " n_samples n_components"],
+    head_indices: Int[torch.Tensor, " batch_size"],
+    tail_indices: Int[torch.Tensor, " batch_size"],
+    edge_weights: Float[torch.Tensor, " batch_size"],
+    j_s: Int[torch.Tensor, " batch_size negative_sample_rate"],
+    alpha: Float[torch.Tensor, ""],
     negative_sample_rate: int,
     gamma: float,
     a: float,
     b: float,
     move_other: bool,
-) -> tuple[mx.array, mx.array]:
-    """Pure gradient computation function (mx.compile compatible).
+) -> tuple[Float[torch.Tensor, " batch_size n_components"], Float[torch.Tensor, " batch_size n_components"]]:
+    """Pure gradient computation function (torch.compile compatible).
 
     Parameters
     ----------
@@ -93,34 +89,34 @@ def _epoch_update(
     current = head_embedding[head_indices]
     other = head_embedding[tail_indices]
 
-    # Compute attractive forces using broadcasting instead of vmap
+    # Compute attractive forces using broadcasting
     diff_attr = current - other
-    dist_squared = mx.sum(diff_attr * diff_attr, axis=-1, keepdims=True)
+    dist_squared = torch.sum(diff_attr * diff_attr, dim=-1, keepdim=True)
     grad_coeff = _attractive_grad_coeff(dist_squared, a, b)
-    grad = mx.clip(grad_coeff * diff_attr, -4.0, 4.0)
+    grad = torch.clamp(grad_coeff * diff_attr, -4.0, 4.0)
 
     # Compute repulsive forces
     tail_embedding_rep = head_embedding[j_s]
     # diff_rep: (batch_size, negative_sample_rate, n_components)
     diff_rep = current[:, None, :] - tail_embedding_rep
     # dist_squared_rep: (batch_size, negative_sample_rate)
-    dist_squared_rep = mx.sum(diff_rep * diff_rep, axis=-1)
+    dist_squared_rep = torch.sum(diff_rep * diff_rep, dim=-1)
 
     grad_coeff_rep = _repulsive_grad_coeff(dist_squared_rep, gamma, a, b)
     grad_rep = grad_coeff_rep[:, :, None] * diff_rep
 
     # Removes any self-interaction gradients
-    grad_rep = mx.where(dist_squared_rep[:, :, None] == 0.0, 0.0, grad_rep)
-    grad_rep = mx.where(grad_coeff_rep[:, :, None] > 0.0, grad_rep, 0.0)
-    grad_rep = mx.clip(grad_rep, -4.0, 4.0)
-    grad_rep = mx.sum(grad_rep, axis=1)
+    grad_rep = torch.where(dist_squared_rep[:, :, None] == 0.0, torch.zeros_like(grad_rep), grad_rep)
+    grad_rep = torch.where(grad_coeff_rep[:, :, None] > 0.0, grad_rep, torch.zeros_like(grad_rep))
+    grad_rep = torch.clamp(grad_rep, -4.0, 4.0)
+    grad_rep = torch.sum(grad_rep, dim=1)
 
     grad_head = grad + grad_rep
 
     if move_other:
         grad_tail = -grad
     else:
-        grad_tail = mx.zeros_like(grad)
+        grad_tail = torch.zeros_like(grad)
 
     # Scale gradients
     scale = alpha * edge_weights[:, None]
@@ -128,22 +124,22 @@ def _epoch_update(
 
 
 def optimize_layout_euclidean(
-    head_embedding: np.ndarray,
-    tail_embedding: np.ndarray,
-    head: np.ndarray,
-    tail: np.ndarray,
-    weight: np.ndarray,
+    head_embedding: Float[np.ndarray, " n_samples n_components"],
+    tail_embedding: Float[np.ndarray, " source_samples n_components"],
+    head: Int[np.ndarray, " n_1_simplices"],
+    tail: Int[np.ndarray, " n_1_simplices"],
+    weight: Float[np.ndarray, " n_1_simplices"],
     n_epochs: int,
     a: float,
     b: float,
-    rng_state: np.ndarray,
+    rng_state: Int[np.ndarray, " n_keys"],
     gamma: float = 1.0,
     initial_alpha: float = 1.0,
     negative_sample_rate: float = 5.0,
     verbose: bool = False,
     tqdm_kwds: dict | None = None,
     batch_size: int | None = None,
-) -> np.ndarray:
+) -> Float[np.ndarray, " n_samples n_components"]:
     """Perform the optimization.
 
     Improve an embedding using gradient descent to minimize the
@@ -204,17 +200,20 @@ def optimize_layout_euclidean(
     if not np.array_equal(head_embedding, tail_embedding):
         raise ValueError("head_embedding and tail_embedding must be the same array for self-embedding")
 
-    # Convert to MLX arrays
-    head_embedding_mx = mx.array(head_embedding)
-    head_mx = mx.array(head)
-    tail_mx = mx.array(tail)
+    # Determine device
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Convert to torch tensors
+    head_embedding_t = torch.tensor(head_embedding, dtype=torch.float32, device=device)
+    head_t = torch.tensor(head, dtype=torch.long, device=device)
+    tail_t = torch.tensor(tail, dtype=torch.long, device=device)
 
     # Normalize weights
-    weight_mx = mx.array(weight / np.max(weight), dtype=mx.float32)
+    weight_t = torch.tensor(weight / np.max(weight), dtype=torch.float32, device=device)
     # Clip so that we have a total weight of 1 within n_epochs for the least weighted edge.
-    weight_mx = mx.clip(weight_mx, 1 / n_epochs_float, 1.0)
+    weight_t = torch.clamp(weight_t, 1 / n_epochs_float, 1.0)
 
-    batch_size = batch_size or min(8192, int(n_1_simplices))
+    batch_size = batch_size or min(head_embedding.shape[0], int(n_1_simplices))
     negative_sample_rate = int(negative_sample_rate)
 
     # Pad arrays to be divisible by batch_size
@@ -222,48 +221,46 @@ def optimize_layout_euclidean(
     padding_len = n_batches * batch_size - n_1_simplices
 
     # Compile the gradient computation function.
-    # Note: We partially apply the scalar constants and static configurations.
-    compiled_epoch_update = mx.compile(
+    compiled_epoch_update = torch.compile(
         functools.partial(
             _epoch_update, a=a, b=b, gamma=gamma, negative_sample_rate=negative_sample_rate, move_other=True
         )
     )
 
-    # Initialize state
+    # Initialize random generator
     seed = abs(rng_state[0].item() if hasattr(rng_state[0], "item") else int(rng_state[0]))
-    key = mx.random.key(seed)
-    alpha = mx.array(initial_alpha)
+    generator = torch.Generator(device=device).manual_seed(seed)
+    alpha = torch.tensor(initial_alpha, dtype=torch.float32, device=device)
 
     # Main training loop
     for epoch in range(int(n_epochs)):
-        key, subkey = mx.random.split(key)
-
         # Shuffle indices
-        indices = mx.arange(n_1_simplices)
+        indices = torch.arange(n_1_simplices, device=device)
         if padding_len > 0:
-            indices = mx.concatenate([indices, mx.full((padding_len,), -1, dtype=mx.int32)])
-        shuffled_indices = mx.random.permutation(indices, key=subkey)
+            padding = torch.full((padding_len,), -1, dtype=torch.long, device=device)
+            indices = torch.cat([indices, padding])
+        shuffled_indices = indices[torch.randperm(indices.shape[0], generator=generator, device=device)]
         batched_indices = shuffled_indices.reshape((n_batches, batch_size))
 
         # Process each batch
         for batch_idx in range(n_batches):
             batch_indices = batched_indices[batch_idx]
 
-            key, subkey = mx.random.split(key)
-            j_s = mx.random.randint(
+            j_s = torch.randint(
                 low=0,
-                high=head_embedding_mx.shape[0],
-                shape=(batch_size, negative_sample_rate),
-                key=subkey,
+                high=head_embedding_t.shape[0],
+                size=(batch_size, negative_sample_rate),
+                generator=generator,
+                device=device,
             )
 
-            current_head_indices = head_mx[batch_indices]
-            current_tail_indices = tail_mx[batch_indices]
-            current_edge_weights = weight_mx[batch_indices]
+            current_head_indices = head_t[batch_indices]
+            current_tail_indices = tail_t[batch_indices]
+            current_edge_weights = weight_t[batch_indices]
 
             # Compute gradients
             head_update, tail_update = compiled_epoch_update(
-                head_embedding=head_embedding_mx,
+                head_embedding=head_embedding_t,
                 head_indices=current_head_indices,
                 tail_indices=current_tail_indices,
                 edge_weights=current_edge_weights,
@@ -272,20 +269,16 @@ def optimize_layout_euclidean(
             )
 
             # Mask updates for padded samples (where indices are -1)
-            head_update = mx.where(batch_indices[:, None] != -1, head_update, 0.0)
-            tail_update = mx.where(batch_indices[:, None] != -1, tail_update, 0.0)
+            mask = (batch_indices != -1).unsqueeze(-1)
+            head_update = torch.where(mask, head_update, torch.zeros_like(head_update))
+            tail_update = torch.where(mask, tail_update, torch.zeros_like(tail_update))
 
-            # Apply updates
-            head_embedding_mx[current_head_indices] += head_update
-            head_embedding_mx[current_tail_indices] += tail_update
+            # Apply updates using index_add for proper gradient accumulation
+            head_embedding_t.index_add_(0, current_head_indices, head_update)
+            head_embedding_t.index_add_(0, current_tail_indices, tail_update)
 
         # Update learning rate
-        alpha = initial_alpha * (1.0 - (epoch / n_epochs_float))
+        alpha = torch.tensor(initial_alpha * (1.0 - (epoch / n_epochs_float)), dtype=torch.float32, device=device)
 
-        # Evaluate periodically to prevent graph from growing too large
-        if epoch % 50 == 0:
-            mx.eval(head_embedding_mx)
-
-    # Final evaluation and convert back to numpy
-    mx.eval(head_embedding_mx)
-    return np.array(head_embedding_mx)
+    # Convert back to numpy
+    return head_embedding_t.cpu().numpy()
