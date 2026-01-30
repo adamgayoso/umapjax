@@ -4,7 +4,7 @@ requires = [ "hatchling" ]
 
 [project]
 name = "umapjax"
-version = "0.0.3"
+version = "0.1.0"
 description = "UMAP, but optimized with jax."
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -18,18 +18,27 @@ classifiers = [
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
 ]
-dependencies = [ "chex", "jax", "jaxlib", "jaxtyping", "umap-learn" ]
+dependencies = [ "chex", "jaxtyping", "mlx[cpu]>=0.30.4", "umap-learn" ]
 # https://docs.pypi.org/project_metadata/#project-urls
 urls.Homepage = "https://github.com/adamgayoso/umapjax"
 urls.Source = "https://github.com/adamgayoso/umapjax"
 
 [dependency-groups]
-dev = [ "pre-commit", "twine>=4.0.2" ]
+dev = [
+  "pre-commit",
+  "twine>=4.0.2",
+  { include-group = "jax" },
+  { include-group = "mlx" },
+  { include-group = "torch" },
+]
 test = [
   "coverage>=7.10",
   "pytest",
   "pytest-cov",     # For VS Code’s coverage functionality
 ]
+jax = [ "jax", "jaxlib" ]
+mlx = [ "mlx[cpu]" ]
+torch = [ "setuptools", "torch>=2", "torchvision" ]
 
 [tool.hatch.build.targets.wheel]
 

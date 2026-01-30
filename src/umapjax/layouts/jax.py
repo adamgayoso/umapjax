@@ -23,6 +23,8 @@ INT32_MAX = np.iinfo(np.int32).max - 1
 
 @chex.dataclass
 class OptimizationState:
+    """State of the optimization."""
+
     head_embedding: Float[jnp.ndarray, " n_samples n_components"]
     key: Array
     alpha: float
@@ -216,7 +218,7 @@ def optimize_layout_euclidean(
     # This is not implemented in umap-learn
     weight = jnp.clip(weight, 1 / n_epochs, 1.0)
 
-    batch_size = batch_size or min(8192, int(n_1_simplices))
+    batch_size = batch_size or min(head_embedding.shape[0], int(n_1_simplices))
     negative_sample_rate = int(negative_sample_rate)
 
     # Pad arrays to be divisible by batch_size

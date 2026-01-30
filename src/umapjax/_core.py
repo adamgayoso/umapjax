@@ -17,10 +17,7 @@ import scipy.sparse as sp
 from jaxtyping import Float
 from sklearn.neighbors import KDTree
 from umap import UMAP
-from umap.spectral import spectral_layout
-
-from ._layouts import optimize_layout_euclidean
-from ._spectral import spectral_layout as spectral_layout_jax
+from umap.spectral import spectral_layout as spectral_layout_scipy
 
 INT32_MIN = np.iinfo(np.int32).min + 1
 INT32_MAX = np.iinfo(np.int32).max - 1
@@ -28,6 +25,50 @@ INT32_MAX = np.iinfo(np.int32).max - 1
 
 ArrayLike = np.ndarray | sp.spmatrix
 RandomState = int | np.random.RandomState | None
+
+# Backend configuration: (module_path, function_name, install_extra)
+_LAYOUT_BACKENDS = {
+    "jax": ("umapjax.layouts.jax", "optimize_layout_euclidean", "jax"),
+    "mx": ("umapjax.layouts.mlx", "optimize_layout_euclidean", "mlx"),
+    "torch": ("umapjax.layouts.torch", "optimize_layout_euclidean", "torch"),
+}
+
+_SPECTRAL_BACKENDS = {
+    "jax": ("umapjax.spectral.jax", "spectral_layout", "jax"),
+    "torch": ("umapjax.spectral.torch", "spectral_layout", "torch"),
+    "scipy": None,  # Uses scipy (always available)
+}
+
+
+def _lazy_import(backend: str, backends: dict, backend_type: str) -> Callable:
+    """Lazily import a backend function."""
+    if backend not in backends:
+        raise ValueError(f"Unknown {backend_type}: {backend}")
+
+    config = backends[backend]
+    if config is None:
+        return spectral_layout_scipy
+
+    module_path, func_name, extra = config
+    try:
+        from importlib import import_module
+
+        module = import_module(module_path)
+        return getattr(module, func_name)
+    except ImportError as e:
+        raise ImportError(
+            f"{backend} backend requires installation. Install with: pip install 'umapjax[{extra}]'"
+        ) from e
+
+
+def _get_layout_fn(backend: str) -> Callable:
+    """Get the layout optimization function for the specified backend."""
+    return _lazy_import(backend, _LAYOUT_BACKENDS, "layout_backend")
+
+
+def _get_spectral_fn(backend: str) -> Callable:
+    """Get the spectral layout function for the specified backend."""
+    return _lazy_import(backend, _SPECTRAL_BACKENDS, "spectral_backend")
 
 
 def simplicial_set_embedding(
@@ -47,7 +88,8 @@ def simplicial_set_embedding(
     verbose: bool = False,
     tqdm_kwds: dict | None = None,
     batch_size: int | None = None,
-    spectral_jax: bool = True,
+    spectral_backend: Literal["jax", "torch", "scipy"] = "scipy",
+    layout_backend: Literal["jax", "mx", "torch"] = "jax",
 ) -> tuple[Float[np.ndarray, " n_samples n_components"], dict]:
     """Perform a fuzzy simplicial set embedding.
 
@@ -118,8 +160,11 @@ def simplicial_set_embedding(
     batch_size
         The batch size to use for the optimization loop.
 
-    spectral_jax
-        Use the JAX implementation of spectral layout.
+    spectral_backend
+        The backend to use for spectral layout.
+
+    layout_backend
+        The backend to use for the optimization loop.
 
     Returns
     -------
@@ -154,7 +199,7 @@ def simplicial_set_embedding(
         embedding = random_state.uniform(low=-10.0, high=10.0, size=(graph.shape[0], n_components)).astype(np.float32)
     elif isinstance(init, str) and init == "spectral":
         # We add a little noise to avoid local minima for optimization to come
-        spectral_fn = spectral_layout_jax if spectral_jax else spectral_layout
+        spectral_fn = _get_spectral_fn(spectral_backend)
         initialisation = spectral_fn(
             data,
             graph,
@@ -190,7 +235,9 @@ def simplicial_set_embedding(
         np.float32, order="C"
     )
 
-    embedding = optimize_layout_euclidean(
+    optimize_layout_fn = _get_layout_fn(layout_backend)
+
+    embedding = optimize_layout_fn(
         head_embedding=embedding,
         tail_embedding=embedding,
         head=head,
@@ -282,8 +329,8 @@ class UmapJax(UMAP):
             * 'random': assign initial embedding positions at random.
             * A numpy array of initial embedding positions.
 
-    spectral_jax
-        Whether to use the jax implementation of the spectral embedding.
+    spectral_backend
+        The backend to use for the spectral embedding.
 
     min_dist
         The effective minimum distance between embedded points. Smaller values
@@ -453,6 +500,9 @@ class UmapJax(UMAP):
     batch_size
         The batch size to use for the optimization loop. If None, the batch size
         is set to the minimum of 8192 and the expected length of an epoch under standard UMAP sampling.
+
+    layout_backend
+        The backend to use for the optimization loop.
     """
 
     def __init__(
@@ -466,7 +516,7 @@ class UmapJax(UMAP):
         n_epochs: int | None = None,
         learning_rate: float = 1.0,
         init: Literal["spectral", "random"] | Float[np.ndarray, " n_samples n_components"] = "spectral",
-        spectral_jax: bool = True,
+        spectral_backend: Literal["jax", "torch", "scipy"] = "scipy",
         min_dist: float = 0.1,
         spread: float = 1.0,
         low_memory: bool = True,
@@ -498,6 +548,7 @@ class UmapJax(UMAP):
         disconnection_distance: float | None = None,
         precomputed_knn: tuple[ArrayLike | None, ArrayLike | None, ArrayLike | None] = (None, None, None),
         batch_size: int | None = None,
+        layout_backend: Literal["jax", "mx", "torch"] = "jax",
     ):
         self.n_neighbors = n_neighbors
         self.metric = metric
@@ -510,7 +561,7 @@ class UmapJax(UMAP):
         self.n_components = n_components
         self.repulsion_strength = repulsion_strength
         self.learning_rate = learning_rate
-        self.spectral_jax = spectral_jax
+        self.spectral_backend = spectral_backend
 
         self.spread = spread
         self.min_dist = min_dist
@@ -542,6 +593,7 @@ class UmapJax(UMAP):
         self.batch_size = batch_size
 
         self.n_jobs = n_jobs
+        self.layout_backend = layout_backend
 
         self.a = a
         self.b = b
@@ -564,13 +616,14 @@ class UmapJax(UMAP):
             negative_sample_rate=self.negative_sample_rate,
             n_epochs=n_epochs,
             init=init,
-            spectral_jax=self.spectral_jax,
+            spectral_backend=self.spectral_backend,
             random_state=random_state,
             metric=self._input_distance_func,
             metric_kwds=self._metric_kwds,
             verbose=self.verbose,
             tqdm_kwds=self.tqdm_kwds,
             batch_size=self.batch_size,
+            layout_backend=self.layout_backend,
         )
 
     def transform(self, X: ArrayLike):

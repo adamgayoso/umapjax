@@ -4,7 +4,7 @@
 
 [badge-tests]: https://img.shields.io/github/actions/workflow/status/adamgayoso/umapjax/test.yaml?branch=main
 
-UMAP, but optimized with jax. (Experimental implementation)
+UMAP, but accelerated. (Experimental implementation)
 
 `umapjax` inherits the API of [umap-learn](https://umap-learn.readthedocs.io/en/latest/). The `UmapJax` class is a drop-in replacement for `umap.UMAP`, with a few key differences:
 
@@ -13,16 +13,32 @@ UMAP, but optimized with jax. (Experimental implementation)
 
 **Note:** `umapjax` does not fully replicate `umap-learn` and care should be used when interpreting results.
 
-This package is intended to be used in combination with accelerated hardware like GPUs and TPUs. There is no benefit to using `umapjax` on a CPU.
+This package implements the following backends (despite being named `umapjax`):
+
+1. `torch` (PyTorch)
+2. `mx` (MLX)
+3. `jax` (JAX)
 
 ## Getting started
 
 ```python
 import umapjax
 
-model = umapjax.UmapJax(n_neighbors=15)
+layout_backend: Literal["jax", "mx", "torch"] = "jax"
+spectral_backend: Literal["jax", "scipy", "torch"] = "scipy"
+batch_size: int | None = None # Defaults to X.shape[0]
+
+model = umapjax.UmapJax(
+    n_neighbors=15,
+    layout_backend=layout_backend,
+    spectral_backend=spectral_backend
+)
 embedding = model.fit_transform(X)
 ```
+
+If the optimization is slow, try increasing the batch size as a multiple of `X.shape[0]`. All backends will automatically use accelerated hardware if available.
+
+If using `"torch"`, you can set `umapjax.layouts.torch.TORCH_DEVICE` and `umapjax.spectral.torch.TORCH_DEVICE` to control the default device used for the layout and spectral embedding, respectively.
 
 ## Implementation details
 
@@ -35,21 +51,17 @@ If you don't have Python installed, we recommend installing [uv][].
 
 There are several alternative options to install umapjax:
 
-1. Install the latest release of `umapjax` from [PyPI][]:
+1. Install the latest release of `umapjax` from [PyPI][] with a preferred backend:
 
 ```bash
-pip install umapjax
+pip install "umapjax[jax,mlx,torch]"
 ```
 
 2. Install the latest development version:
 
 ```bash
-pip install git+https://github.com/adamgayoso/umapjax.git@main
+pip install "umapjax[jax,mlx,torch] @ git+https://github.com/adamgayoso/umapjax.git@main"
 ```
-
-## Release notes
-
-See the [changelog][].
 
 ## Contact
 
