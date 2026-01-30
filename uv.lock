@@ -769,6 +769,20 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/c1/8d/fc498b847f9ed8459ee89fb5b06f7237541192a9e6cd965bed9f61114f5c/mlx-0.30.4-cp314-cp314-manylinux_2_35_x86_64.whl", hash = "sha256:962f99d637a99058b7d7659b66570f988815f26f2ae9af52c4cd0359fab928e2", size = 662314, upload-time = "2026-01-27T22:53:41.415Z" },
 ]
 
+[package.optional-dependencies]
+cpu = [
+    { name = "mlx-cpu", marker = "sys_platform == 'linux'" },
+]
+
+[[package]]
+name = "mlx-cpu"
+version = "0.30.4"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7f/71/8a2f3598d628c6e5fd6ca4c58e080311dc39c558561d8f7fb2d91865f0e6/mlx_cpu-0.30.4-py3-none-manylinux_2_35_aarch64.whl", hash = "sha256:d3de6152e38f8a884d7cadb5e633bcf5fb346434867195709b4f6db8450e3f91", size = 8684835, upload-time = "2026-01-27T22:40:39.919Z" },
+    { url = "https://files.pythonhosted.org/packages/ab/c4/eae335cf6859c4a45be52888b754bfceb0ad5363bd05ae0ce3e67fac1dec/mlx_cpu-0.30.4-py3-none-manylinux_2_35_x86_64.whl", hash = "sha256:1b7f076587d1bd028a6f8197fe35721a39b8202e36b05e3aba89d29d79ab6764", size = 10257054, upload-time = "2026-01-27T22:40:42.689Z" },
+]
+
 [[package]]
 name = "mlx-metal"
 version = "0.30.4"
@@ -1792,12 +1806,19 @@ source = { editable = "." }
 dependencies = [
     { name = "chex" },
     { name = "jaxtyping" },
+    { name = "mlx", extra = ["cpu"] },
     { name = "umap-learn" },
 ]
 
 [package.dev-dependencies]
 dev = [
+    { name = "jax" },
+    { name = "jaxlib" },
+    { name = "mlx" },
     { name = "pre-commit" },
+    { name = "setuptools" },
+    { name = "torch" },
+    { name = "torchvision" },
     { name = "twine" },
 ]
 jax = [
@@ -1809,13 +1830,8 @@ mlx = [
 ]
 test = [
     { name = "coverage" },
-    { name = "jax" },
-    { name = "jaxlib" },
-    { name = "mlx" },
     { name = "pytest" },
     { name = "pytest-cov" },
-    { name = "torch" },
-    { name = "torchvision" },
 ]
 torch = [
     { name = "setuptools" },
@@ -1827,12 +1843,19 @@ torch = [
 requires-dist = [
     { name = "chex" },
     { name = "jaxtyping" },
+    { name = "mlx", extras = ["cpu"], specifier = ">=0.30.4" },
     { name = "umap-learn" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "jax" },
+    { name = "jaxlib" },
+    { name = "mlx" },
     { name = "pre-commit" },
+    { name = "setuptools" },
+    { name = "torch", specifier = ">=2" },
+    { name = "torchvision" },
     { name = "twine", specifier = ">=4.0.2" },
 ]
 jax = [
@@ -1842,13 +1865,8 @@ jax = [
 mlx = [{ name = "mlx" }]
 test = [
     { name = "coverage", specifier = ">=7.10" },
-    { name = "jax" },
-    { name = "jaxlib" },
-    { name = "mlx" },
     { name = "pytest" },
     { name = "pytest-cov" },
-    { name = "torch", specifier = ">=2" },
-    { name = "torchvision" },
 ]
 torch = [
     { name = "setuptools" },
