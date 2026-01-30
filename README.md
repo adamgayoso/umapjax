@@ -38,6 +38,8 @@ embedding = model.fit_transform(X)
 
 If the optimization is slow, try increasing the batch size as a multiple of `X.shape[0]`. All backends will automatically use accelerated hardware if available.
 
+If using `"torch"`, you can set `umapjax.layouts.torch.TORCH_DEVICE` and `umapjax.spectral.torch.TORCH_DEVICE` to control the default device used for the layout and spectral embedding, respectively.
+
 ## Implementation details
 
 The implementaion used in `umapjax` is very similar to the one used in [umap-learn](https://umap-learn.readthedocs.io/en/latest/); however, rather than a single step updating one single point, we update a set of points in parallel using jax. The gradients of the points are weighted by edge weights, which control sampling frequencies in the original algorithm. If results look strange, try changing `n_epochs` or `batch_size`. The `batch_size` argument can also be used to control acceleration on GPUs/TPUs.

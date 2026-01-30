@@ -16,6 +16,8 @@ import numpy as np
 import torch
 from jaxtyping import Float, Int
 
+TORCH_DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 
 @dataclass
 class OptimizationState:
@@ -201,7 +203,7 @@ def optimize_layout_euclidean(
         raise ValueError("head_embedding and tail_embedding must be the same array for self-embedding")
 
     # Determine device
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = TORCH_DEVICE
 
     # Convert to torch tensors
     head_embedding_t = torch.tensor(head_embedding, dtype=torch.float32, device=device)

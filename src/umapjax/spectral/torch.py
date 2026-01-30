@@ -20,6 +20,7 @@ from sklearn.metrics import pairwise_distances
 RandomState = int | np.random.Generator | np.random.RandomState | None
 
 SPECTRAL_DENSE_THRESHOLD = 10_000  # ~1.2GB of RAM in float32
+TORCH_DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def multi_component_layout(
@@ -249,7 +250,7 @@ def _spectral_layout(
     X = gen.normal(size=(L.shape[0], k)).astype(dtype)
 
     # Use CUDA if available
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = TORCH_DEVICE
 
     if graph.shape[0] < SPECTRAL_DENSE_THRESHOLD:
         L_dense = L.toarray() if scipy.sparse.issparse(L) else L
