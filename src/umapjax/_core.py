@@ -19,18 +19,56 @@ from sklearn.neighbors import KDTree
 from umap import UMAP
 from umap.spectral import spectral_layout as spectral_layout_scipy
 
-from umapjax.layouts.jax import optimize_layout_euclidean as layout_jax
-from umapjax.layouts.mlx import optimize_layout_euclidean as layout_mlx
-from umapjax.layouts.torch import optimize_layout_euclidean as layout_torch
-from umapjax.spectral.jax import spectral_layout as spectral_layout_jax
-from umapjax.spectral.torch import spectral_layout as spectral_layout_torch
-
 INT32_MIN = np.iinfo(np.int32).min + 1
 INT32_MAX = np.iinfo(np.int32).max - 1
 
 
 ArrayLike = np.ndarray | sp.spmatrix
 RandomState = int | np.random.RandomState | None
+
+# Backend configuration: (module_path, function_name, install_extra)
+_LAYOUT_BACKENDS = {
+    "jax": ("umapjax.layouts.jax", "optimize_layout_euclidean", "jax"),
+    "mx": ("umapjax.layouts.mlx", "optimize_layout_euclidean", "mlx"),
+    "torch": ("umapjax.layouts.torch", "optimize_layout_euclidean", "torch"),
+}
+
+_SPECTRAL_BACKENDS = {
+    "jax": ("umapjax.spectral.jax", "spectral_layout", "jax"),
+    "torch": ("umapjax.spectral.torch", "spectral_layout", "torch"),
+    "scipy": None,  # Uses scipy (always available)
+}
+
+
+def _lazy_import(backend: str, backends: dict, backend_type: str) -> Callable:
+    """Lazily import a backend function."""
+    if backend not in backends:
+        raise ValueError(f"Unknown {backend_type}: {backend}")
+
+    config = backends[backend]
+    if config is None:
+        return spectral_layout_scipy
+
+    module_path, func_name, extra = config
+    try:
+        from importlib import import_module
+
+        module = import_module(module_path)
+        return getattr(module, func_name)
+    except ImportError as e:
+        raise ImportError(
+            f"{backend} backend requires installation. Install with: pip install 'umapjax[{extra}]'"
+        ) from e
+
+
+def _get_layout_fn(backend: str) -> Callable:
+    """Get the layout optimization function for the specified backend."""
+    return _lazy_import(backend, _LAYOUT_BACKENDS, "layout_backend")
+
+
+def _get_spectral_fn(backend: str) -> Callable:
+    """Get the spectral layout function for the specified backend."""
+    return _lazy_import(backend, _SPECTRAL_BACKENDS, "spectral_backend")
 
 
 def simplicial_set_embedding(
@@ -161,14 +199,7 @@ def simplicial_set_embedding(
         embedding = random_state.uniform(low=-10.0, high=10.0, size=(graph.shape[0], n_components)).astype(np.float32)
     elif isinstance(init, str) and init == "spectral":
         # We add a little noise to avoid local minima for optimization to come
-        if spectral_backend == "jax":
-            spectral_fn = spectral_layout_jax
-        elif spectral_backend == "torch":
-            spectral_fn = spectral_layout_torch
-        elif spectral_backend == "scipy":
-            spectral_fn = spectral_layout_scipy
-        else:
-            raise ValueError(f"Unknown spectral_backend: {spectral_backend}")
+        spectral_fn = _get_spectral_fn(spectral_backend)
         initialisation = spectral_fn(
             data,
             graph,
@@ -204,14 +235,7 @@ def simplicial_set_embedding(
         np.float32, order="C"
     )
 
-    if layout_backend == "jax":
-        optimize_layout_fn = layout_jax
-    elif layout_backend == "mx":
-        optimize_layout_fn = layout_mlx
-    elif layout_backend == "torch":
-        optimize_layout_fn = layout_torch
-    else:
-        raise ValueError(f"Unknown layout_backend: {layout_backend}")
+    optimize_layout_fn = _get_layout_fn(layout_backend)
 
     embedding = optimize_layout_fn(
         head_embedding=embedding,

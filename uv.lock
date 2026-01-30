@@ -1664,15 +1664,11 @@ wheels = [
 
 [[package]]
 name = "umapjax"
-version = "0.0.3"
+version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "chex" },
-    { name = "jax" },
-    { name = "jaxlib" },
     { name = "jaxtyping" },
-    { name = "mlx" },
-    { name = "torch" },
     { name = "umap-learn" },
 ]
 
@@ -1681,13 +1677,21 @@ dev = [
     { name = "pre-commit" },
     { name = "twine" },
 ]
+jax = [
+    { name = "jax" },
+    { name = "jaxlib" },
+]
 mlx = [
     { name = "mlx" },
 ]
 test = [
     { name = "coverage" },
+    { name = "jax" },
+    { name = "jaxlib" },
+    { name = "mlx" },
     { name = "pytest" },
     { name = "pytest-cov" },
+    { name = "torch" },
 ]
 torch = [
     { name = "torch" },
@@ -1696,11 +1700,7 @@ torch = [
 [package.metadata]
 requires-dist = [
     { name = "chex" },
-    { name = "jax" },
-    { name = "jaxlib" },
     { name = "jaxtyping" },
-    { name = "mlx" },
-    { name = "torch", specifier = ">=2.10.0" },
     { name = "umap-learn" },
 ]
 
@@ -1709,13 +1709,21 @@ dev = [
     { name = "pre-commit" },
     { name = "twine", specifier = ">=4.0.2" },
 ]
+jax = [
+    { name = "jax" },
+    { name = "jaxlib" },
+]
 mlx = [{ name = "mlx" }]
 test = [
     { name = "coverage", specifier = ">=7.10" },
+    { name = "jax" },
+    { name = "jaxlib" },
+    { name = "mlx" },
     { name = "pytest" },
     { name = "pytest-cov" },
+    { name = "torch", specifier = ">=2.10" },
 ]
-torch = [{ name = "torch" }]
+torch = [{ name = "torch", specifier = ">=2.10" }]
 
 [[package]]
 name = "urllib3"
